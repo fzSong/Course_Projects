@@ -1,0 +1,158 @@
+---
+title: "HW2-Fangzhou Song"
+author: "Fangzhou Song"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+##Coding Algorithm
+
+a. The initialization step. Note that the parameters for each cluster, $\lambda_1$ and $\lambda_2$ have to be positive.
+
+```{r}
+em_init=function(x){
+  lam1=quantile(x,0.7)
+  lam2=quantile(x,0.3)
+  return(c(lam1,lam2))
+}
+```
+
+
+b. The E-step. If you know what you are doing, this step should be straightforward. You just need to use the dpois function.
+
+```{r}
+em_e=function(x,lam1,lam2){
+  p1=dpois(x,lambda = lam1)
+  p2=dpois(x,lambda = lam2)
+  return(p1/(p1+p2))
+}
+```
+
+c. The M-step. Use your result from the question 2.
+
+\[
+  \lambda_k=\frac{\sum_{i=1}^{n} {\pi_{i,k}x_i}}{\sum_{i=1}^{n} {\pi_{i,k}}}
+\]
+
+```{r}
+em_m=function(x,z){
+  lam1=sum(x*z)/sum(z)
+  lam2=sum(x*(1-z))/sum(1-z)
+  return(c(lam1,lam2))
+}
+```
+
+d. Put it together
+
+```{r}
+em_poisson=function(x,iter.max=100,conv.check=1e-4){
+  init_para=em_init(x)
+  lam1=init_para[1]
+  lam2=init_para[2]
+  
+  previous_para=init_para
+  
+  for(t in 1:iter.max){
+    e_result=em_e(x,lam1,lam2)   #E-step
+    m_result=em_m(x,e_result)    #m-Step
+    lam1=m_result[1]
+    lam2=m_result[2]
+    
+    #stop the algorithm if we achieved convergence
+    if(max(abs(m_result-previous_para)) < conv.check) break;
+    
+    previous_para=m_result
+  }
+  
+  return(list(z=e_result,
+              lam=m_result))
+}
+
+```
+
+##Check it using simulation
+
+5. Generate random Poisson samples with the following R code, and test how well your algorithm works in finding the clusters and the cluster parameters:
+
+```{r}
+set.seed(233)
+lambda1 <- 10
+lambda2 <- 1.2
+
+n1 <- 50
+n2 <- 50
+
+x1 <- rpois(n1,lambda1)
+x2 <- rpois(n2,lambda2)
+
+x <- c(x1,x2)
+```
+
+
+```{r}
+fit1=em_poisson(x)
+fit1
+```
+It shows that $\hat\lambda_1$=9.202479, $\hat\lambda_2$=1.287089, which are approximate to 10 and 1.2
+
+
+Result check
+```{r}
+fit1$z > 0.5 
+```
+Use 0.5 as cut-off. If z > 0.5, we can regrad it as the member of cluster 1, cluster 2 otherwise. It shows that most of predictions are correct.  
+
+
+##Real life Application
+
+6. Download the DJI_vol.csv dataset from Blackboard. In this dataset, you will find the total number of volatile days that the Dow Jones Index had for each month. Here, the number of volatile days is defined as the number of days in which the absolute value of the daily return is higher than 1%.  
+
+
+Read data
+```{r}
+library(tidyverse)
+library(lubridate)
+data=read_csv("DJI_vol.csv")
+```
+
+Time-series plot
+```{r}
+ts.plot(data$High_Vol_Days)
+```
+
+
+Cluster estimates
+```{r}
+result=em_poisson(data$High_Vol_Days)
+result$lam
+```
+
+Plot the cluster assignments in time
+```{r}
+data_2=cbind(data,result$z)
+data_3=data_2 %>%
+  mutate(
+    cluster=as.factor(if_else(result$z > 0.5,1,2)),
+    Date=ymd(Date)
+  ) 
+ggplot(data = data_3)+
+  geom_point(mapping = aes(x=Date,y=High_Vol_Days,color=cluster))+
+  geom_line(mapping = aes(x=Date,y=High_Vol_Days),linetype=2)+
+  geom_vline(xintercept = ymd(c("2008-01-01",
+                                "2009-01-01",
+                                "2010-01-01",
+                                "2011-01-01",
+                                "2012-01-01",
+                                "2013-01-01",
+                                "2014-01-01",
+                                "2015-01-01",
+                                "2016-01-01",
+                                "2017-01-01",
+                                "2018-01-01")))
+```
+
+As can be seen from the plot, the boundary bewtween cluster 1 and 2 is 5. Before 2012, the cluster 1 is majority. However, the data after 2012 mostly belongs to cluster 2.  
+
+
+In my opinion, it is not suprised to see that there is no such a significant relationship between cluster and time because clustering is an unsupervised algorithm. During the process, we only try to analyze or explore some pattern in High_Vol_Days variable without any other information included.

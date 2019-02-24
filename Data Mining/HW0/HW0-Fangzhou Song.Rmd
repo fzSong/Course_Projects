@@ -1,0 +1,286 @@
+---
+title: "HW0-Fangzhou Song"
+author: "Fangzhou Song"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+### Package loading
+```{r,message=FALSE,warning=FALSE}
+rm(list = ls())
+library(tidyverse)
+```
+
+### Read data
+```{r,message=FALSE,warning=FALSE}
+data=read_csv("C:/Users/ArkSong/Desktop/GWU/Stat 6240-Statistical Data Mining/Assignments/HW0/events_log.csv",col_names=TRUE)
+```
+
+### Data processing
+```{r}
+options(scipen=200)
+glimpse(data)
+```
+
+### Question 1
+>1.What is their daily overall clickthrough rate? How does it vary between the groups?  
+
+
+Add variables year, month, day
+```{r}
+data$timestamp=as.character(data$timestamp)
+```
+
+```{r}
+data_ymd=mutate(data,
+                year=substr(timestamp,1,4),
+                month=substr(timestamp,5,6),
+                day=substr(timestamp,7,8),
+                result_position=factor(result_position)
+                )
+```
+
+
+
+
+Calculate daily overall clickthrough rate
+```{r,fig.width = 3}
+data1=data_ymd %>%
+  select(year,month,day,group,session_id,timestamp,action,result_position) %>%
+  filter(action=="searchResultPage" |action=="visitPage" ) %>%
+  arrange(day,session_id,timestamp) %>%
+  group_by(year,month,day,session_id) %>%
+  mutate(
+    action_lag=lag(action)
+  ) 
+knitr::kable(head(data1,20))
+```
+
+Arrange all record in time order group by each session.  
+
+
+It is easy to conclude that each searchResultPage action is unique and valid but one searchResultPage action may leads several visitPage action records (0,1,2,3,...). Even though someone click more than 1 page after one search, it should be regard as only one valid click. Therefore, I just choose the 1st visitPage record that follows each searchResultPage action as once valid click.  
+
+
+Use lag function to each session's sequential record. If a visitPage record's action_lag is "sequential" , then it must be 1st visitPage action for each session.
+
+
+```{r}
+data2=data1 %>%
+  filter(action=="searchResultPage" | (action=="visitPage" & action_lag=="searchResultPage")
+  ) 
+```
+
+data2 is the dataset which contains "searchResultPage" and only first "visitPage" action for each session.
+
+
+```{r}
+(data2_overall=data2%>%
+  group_by(year,month,day) %>%
+  summarise(
+    visitPage_count=sum(action=="visitPage"),
+    searchResultPage_count=sum(action=="searchResultPage"),
+    cr=visitPage_count/searchResultPage_count
+  ))
+```
+
+
+Between groups
+```{r}
+(data2_group=data2 %>%
+  group_by(year,month,day,group) %>%
+  summarise(
+    visitPage_count=sum(action=="visitPage"),
+    searchResultPage_count=sum(action=="searchResultPage"),
+    cr=visitPage_count/searchResultPage_count
+  ) 
+)
+```
+
+
+
+```{r}
+ggplot(data=data2_group)+
+  geom_line(mapping = aes(x=as.integer(day),y=cr,color=group))+
+  ylab("Clickthrough Rate")
+```
+
+It can been seen from the plot that group A has a significant higher clickthrough rate than group B.  
+
+
+### Qusetion 2
+>2.Which results do people tend to try first? How does it change day-to-day?  
+
+
+From the Question1, we have already got the dataset which contains "searchResultPage" and only first "visitPage" action for each session, which is data2. Thus, we just need to count the total number of each "result_position" to see which results people tend to try first using data2.
+
+```{r}
+(data_first=data2 %>%
+  filter(action=="visitPage") %>%
+  ungroup() %>%
+  count(result_position))
+```
+
+From the result, we can see that most people try clicking position 1 first. The amount of people decrease as position order number increase. 
+
+Top 5 Change day-to-day
+```{r}
+(day_to_day=data2 %>%
+  filter(action=="visitPage",result_position %in% c(1:5)) %>%
+  group_by(year,month,day,result_position) %>%
+  summarise(
+    n=n()
+  ) %>%
+  ggplot()+
+  geom_line(mapping = aes(x=as.integer(day),y=n,color=result_position))
+)
+```
+
+It can be seen from the plot that even though there is a fluctuation of amount for top 5 result position, the rank doesn't change 
+
+
+### Question 3
+>3.What is their daily overall zero results rate? How does it vary between the groups?
+
+
+Daily overall zero results rate
+```{r}
+(data3=data_ymd %>%
+  filter(action=="searchResultPage") %>%
+  group_by(year,month,day) %>%
+  summarise(
+    zero_result=sum(n_results==0),
+    total=n(),
+    zero_rate=zero_result/total
+    ))
+```
+
+
+Between groups
+```{r}
+(data3_group=data_ymd %>%
+  filter(action=="searchResultPage") %>%
+  group_by(year,month,day,group) %>%
+  summarise(
+    zero_result=sum(n_results==0),
+    total=n(),
+    zero_rate=zero_result/total
+    )
+)
+```
+
+```{r}
+data3_group %>%
+  ggplot()+
+  geom_line(mapping = aes(x=as.integer(day),y=zero_rate,color=group))
+```
+
+
+### Question 4
+>4.Let session length be approximately the time between the first event and the last event in a session. Choose a variable from the dataset and describe its relationship to session length.  
+
+
+Change timestamp into second unit and calculate session length  
+Choose total search times for each session as comparable variable
+```{r}
+(data4=data %>%
+  mutate(
+    time=as.integer(substr(timestamp,13,14)) + #second
+      as.integer(substr(timestamp,11,12))*60 + #minute
+      as.integer(substr(timestamp,9,10))*3600+ #hour
+      as.integer(substr(timestamp,7,8))*3600*24 #day
+  ) %>%
+  arrange(session_id,time) %>%
+  group_by(session_id) %>%
+  summarise(
+    session_length=last(time)-first(time),
+    search_count=sum(action=="searchResultPage")
+  )
+)
+```
+
+Try scatter plot
+```{r}
+ggplot(data=data4,mapping = aes(x=search_count,y=session_length))+
+  geom_point()
+```
+
+It seems that there are some outlies. Remove them and plot again
+
+
+
+```{r}
+data4_a=data4 %>%
+  filter(session_length < 1000 & session_length!=0,search_count < 50)
+
+(data4_plot=data4_a %>%
+  ggplot(mapping = aes(x=search_count,y=session_length))+
+  geom_point(alpha=0.2)+
+  geom_smooth()+
+  xlab("Total search times"))
+```
+
+It can be senn from the plot that session length and total search times have a roughly positive relationship
+
+
+### Question 5
+>Summarize your findings in an executive summary
+
+**1.Daily overall clickthrough rate**
+```{r}
+data2_overall
+```
+
+It shows that daily overall clickthrough rate doesn't change a lot over days
+
+
+**Vary between groups**
+```{r}
+data2_group
+ggplot(data=data2_group)+
+  geom_line(mapping = aes(x=as.integer(day),y=cr,color=group))+
+  ylab("Clickthrough Rate")
+```
+
+The clickthrough rate of group a is obviously larger than group b
+
+
+**2.Results that people try first**
+```{r}
+head(data_first,10)
+```
+
+From the result, we can see that most people try clicking position 1 first. The amount of people decrease as position order number increase.  
+
+**Change day to day**
+```{r}
+day_to_day
+```
+
+It can be seen from the plot that even though there is a fluctuation of amount for top 5 result position, the rank doesn't change 
+
+
+**3.Overall zero results rate**
+```{r}
+data3
+```
+
+**Vary between groups**
+```{r}
+data3_group
+data3_group %>%
+  ggplot()+
+  geom_line(mapping = aes(x=as.integer(day),y=zero_rate,color=group))
+```
+
+It can be seen that zero rate of two group has a alternating pattern
+
+**4.total search times v.s. session length**
+
+```{r}
+data4_plot
+```
+
+It can be senn from the plot that session length and total search times have a roughly positive relationship but not so strong

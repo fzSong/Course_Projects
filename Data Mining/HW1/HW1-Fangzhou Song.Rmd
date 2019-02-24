@@ -1,0 +1,222 @@
+---
+title: "HW1-Fangzhou Song"
+author: "Fangzhou Song"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r,message=FALSE,warning=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(GGally)
+```
+
+## Question 1
+>Install the titanic package from CRAN and load the titanic_train dataset, and check its help file to learn what the dataset contains.
+
+```{r,message=FALSE,warning=FALSE}
+library(titanic)
+data("titanic_train")
+glimpse(titanic_train)
+```
+
+>Remove the PassengerId, Name, Ticket and Cabin columns, and transform the Fare variable by taking its log.
+
+```{r}
+data1= titanic_train %>%
+  filter(Embarked!="",Fare!=0,is.na(Age)==FALSE) %>%
+  select(Survived,Pclass,Sex:Parch,Fare,Embarked) %>%
+  mutate(
+    Fare=log(Fare),
+    Survived=as.factor(Survived),
+    Pclass=as.factor(Pclass),
+    Sex=as.factor(Sex)
+  )
+head(data1,10)
+```
+
+
+>Choose three variable pairs (for instance, ¡°Sex¡± and ¡°Survived¡± is one pair) and plot their distribution in the dataset by using appropriate plots. You can try mosaic plots, densities, histograms. You are asked to provide at least one plot for each pair.  
+
+
+Sex v.s. Survived
+```{r}
+data1 %>%
+  ggplot() +
+  geom_bar(mapping = aes(x=Survived,fill=Sex),position = "dodge")
+```
+
+Pclass v.s. Age
+```{r}
+data1 %>%
+  ggplot()+
+  geom_density(mapping = aes(x=Age,fill=Pclass,alpha=0.2))
+```
+
+Age v.s. Fare
+```{r}
+data1 %>%
+  ggplot(mapping = aes(x=Age,y=Fare))+
+  geom_point()+
+  geom_smooth()
+```
+
+>Create a model matrix of the dataset that only contains numbers (no factors!) by using the model.matrix function. Then, remove the Survived variable from this dataset.  
+
+
+Matrix that only contains numbers
+```{r}
+data1_a=model.matrix(~Survived+Pclass+Age+SibSp+Parch+Fare+Embarked,data1)
+data1_a=data1_a[,-1]  
+head(data1_a,5)
+```
+
+Remove the Survived variable from this dataset
+```{r}
+data1_b=data1_a[,-1]
+head(data1_b,5)
+```
+
+>Fit a PCA to your matrix from the previous step. Plot the scores of the observations (use only the first 2 dimensions) and color them according to the Survived variable. 
+
+```{r}
+pca=prcomp(data1_b,center = TRUE,scale. = TRUE)
+pca$rotation
+```
+
+
+```{r}
+ggplot(data=data.frame(pca$x))+
+  geom_point(mapping = aes(x=pca$x[,1],y=pca$x[,2],color=data1$Survived))
+```
+
+>Repeat the previous question with NMF (non-negative matrix factorization). Use rank=2 for the fit. Note which variables were chosen.
+
+```{r}
+library(pkgmaker)
+library(registry)
+library(rngtools)
+library(cluster)
+library(NMF)
+res_nmf=nmf(data1_b,rank = 2,method = "snmf/r")
+w=basis(res_nmf)
+h=coef(res_nmf)
+ggplot(data=data.frame(w))+
+  geom_point(mapping = aes(x=w[,1],y=w[,2],color=data1$Survived))
+```
+
+>Finally, load the titanic_test dataset. Using your fitted PCA from the previous stages, obtain the 2 dimensional projections of the test dataset. Plot the scores with respect to the Survived variable.
+
+```{r,message=FALSE}
+data("titanic_test")
+sur=read_csv("titanic3.csv")
+sur=rename(sur,Name=name)
+```
+
+```{r}
+data1_test= titanic_test %>%
+  inner_join(sur,by="Name") %>%
+  filter(Embarked!="",Fare!=0,is.na(Age)==FALSE) %>%
+  select(survived,Pclass,Sex:Parch,Fare,Embarked) %>%
+  mutate(
+    survived=as.factor(survived),
+    Fare=log(Fare),
+    Pclass=as.factor(Pclass),
+    Sex=as.factor(Sex)
+  )
+data1_test_m=model.matrix(~Pclass+Age+SibSp+Parch+Fare+Embarked,data1_test)
+data1_test_m=data1_test_m[,-1]  
+head(data1_test_m,5)
+```
+
+```{r}
+result=scale(data1_test_m) %*% pca$rotation[,1:2]
+ggplot(data=data.frame(result))+
+  geom_point(mapping = aes(x=result[,1],y=result[,2],color=data1_test$survived))
+```
+
+##Question 2
+>Choose a dataset from Kaggle, any of the R packages or generate your own dataset by capturing photos from Amazon.com with the ¡°Image Downloader¡± extension of Google Chrome as we did in class. If the dataset size is too large, randomly choose 2000 samples. Feel free to discard any variables that are not numbers or factors.
+
+```{r}
+library(jpeg)
+library(EBImage)
+```
+
+Load cat pictures, use gray images, change their size into 400x300 and matrix form
+```{r}
+cat_name=paste0("cats/",list.files("cats/"))
+
+convert_image=function(x){
+  a=readImage(x)
+  a=channel(a,"gray")
+  c=resize(a,w=400,h=300)
+  return(c)
+}
+
+cat_pic_mat=sapply(cat_name,function(x) matrix(convert_image(x),nrow=1))
+
+```
+
+Display a example of pictures
+```{r}
+cat_pic_array=array(sapply(cat_name[1:3],convert_image),dim = c(400,300,3))
+
+display(cat_pic_array[,,3])
+
+```
+
+
+>Use PCA and at least one other method (this could be Logistic PCA, Sparse PCA, NMF or any other factorization method) to obtain a low dimensional representation of the data.Provide plots of the low dimensional representations.
+
+
+
+```{r}
+dim(cat_pic_mat)
+```
+
+Apply PCA algorithm
+```{r}
+cat_pic_mat_t=t(cat_pic_mat)
+cat_pca_t=prcomp(cat_pic_mat_t,center = TRUE)
+```
+
+Apply NMF algorithm 
+```{r}
+#cat_nmf=nmf(cat_pic_mat_t,rank = 10,method = "snmf/r")
+#It takes about 2 hour to run
+```
+
+Low dimensional representations
+```{r}
+theMin=min(apply(cat_pca_t$rotation[,1:100],2,min))
+theMax=max(apply(cat_pca_t$rotation[,1:100],2,max))
+
+rots=(cat_pca_t$rotation[,1:100]-theMin)/(theMax-theMin)
+
+display(rots[,2] %>% matrix(nrow=400,ncol=300) )
+```
+
+
+>Analyze the fitted models in detail. Which variables are chosen or have a larger magnitude? Do the 2-dimensional plots suggest anything specific about the dataset? Write a summary of your results; your summary should have at least 150 words.
+
+2-dimensional plots
+```{r}
+ggplot(data=data.frame(cat_pca_t$x))+
+  geom_point(mapping = aes(x=cat_pca_t$x[,1],y=cat_pca_t$x[,2]))
+  
+```
+
+##Summary
+In question 2, I choose to apply PCA algorithm on cat pictures instead of some row data like Titanic in question 1. Obviously, PCA have quite different performance on these two types of data. In cat pictures, the variables are not ones that have some specific meaning like age, price, etc, but ones that represent the level of gray color of each pixel using float number. Therefore, it hard to show and explain Which variables are chosen or have a larger magnitude. Instead, we can plot loadings or principal components to regrad it as the main structure or appearance of cats. And every picture can be represented as the combination of those characteristcs.  
+
+From the 2 dimesional plot, we can see that most of points are gathering around (0,0) and some of them scatter randomly all around. I think this can be explained by the poor quality of pictures.
+
+```{r}
+knitr::include_graphics("pic.jpg")
+```
+
+From the screen shot , we can see that "good" pictures are ones which mainly focus on the face of cats, "bad" pictures tend to have other factors in pictures which have less common features compared to those "good" ones. So, next time I will definitely collect some better quality pictures
+
+
